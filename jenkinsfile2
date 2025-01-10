@@ -1,0 +1,48 @@
+pipeline {
+    agent any
+    environment {
+        HARBOR_URL = 'harbor.securityzone.vn'
+        IMAGE_GROUP = 'testcase1'
+        TAG = 'latest'
+    }
+    stages {
+        stage('Checkout') {
+            steps {
+                sh 'echo passed 1'
+                    git branch: 'main', changelog: false, poll: false, url: 'http://10.30.182.20/root/demo-app'
+            }
+        }
+
+        stage('Update Deployment File and Commit to Git') {
+            steps {
+                script {
+                    catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE'){
+
+                            echo "${images}"
+                            images.split('\n').each { image ->
+                                def imageName = image.split(":")[0]
+                                def imageTagex = image.split(":")[1]
+                                echo "Updating image tag for ${imageName}"
+
+                                def imageTag = "${HARBOR_URL}/${IMAGE_GROUP}/${imageName}:${DOCKERTAG}"
+                                sh "sed -i 's|image: ${HARBOR_URL}/${IMAGE_GROUP}/${imageName}:${imageTagex}|image: ${imageTag}|g' complete-demo.yaml"
+                            }
+                            sh'cat complete-demo.yaml'
+                            withCredentials([usernamePassword(credentialsId: 'gitlab-user', usernameVariable: 'GIT_USERNAME', passwordVariable: 'GIT_PASSWORD')]) {
+                                sh '''
+                                    git config --global user.name "root"
+                                    git config --global user.email "jenkins@ci.com"
+                                    git add .
+                                    git commit -m "Update image tags for ${DOCKERTAG}"
+                                    git push http://10.30.182.20/root/demo-app HEAD:main
+
+                                '''
+                            }
+                    }
+
+                }
+            }
+        }
+
+    }
+}
